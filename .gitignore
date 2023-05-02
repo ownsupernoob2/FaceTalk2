@@ -1,0 +1,8 @@
+.DS_STORE
+venv/
+*.pyc
+__pycache__/
+.env
+keys
+wav2lip/weights/
+temp/*

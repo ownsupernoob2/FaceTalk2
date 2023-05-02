@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Open AI Chatting</title>
+    <meta name="author" content="Mina">
+    <link rel="icon" type="image/x-icon" href="/static/favicon.ico">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.0.2/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-EVSTQN3/azprG1Anm3QDgpJLIm9Nao0Yz1ztcQTwFspd3yD65VohhpuuCOmLASjC" crossorigin="anonymous">
+    <link href="https://vjs.zencdn.net/8.0.4/video-js.css" rel="stylesheet" />
+    <script src="https://cdn.jsdelivr.net/npm/vue@3.2.47/dist/vue.global.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+</head>
+<body  class="bg-dark">
+<div id="app" >
+<nav  class="navbar navbar-inverse bg-success navbar-fixed-top">
+  <div class="container-fluid">
+    <div class="navbar-header">
+      <a class="navbar-brand text-white" href="#">{{ page_title }}</a>
+    </div>
+
+         <form class="navbar-form navbar-left">
+                    <div class="form-check">
+                        <input class="form-check-input" type="radio" v-model="api_key_choice" name="apiKeyChoice" value="default" id="apiKeyChoiceDefault" checked>
+                        <label class="form-check-label text-white" for="apiKeyChoiceDefault">
+                            {{ api_key_choice_default }}
+                        </label>
+                    </div>
+                    <div class="form-check">
+                        <input class="form-check-input" type="radio" v-model="api_key_choice" name="apiKeyChoice" value="custom" id="apiKeyChoiceCustom">
+                        <label class="form-check-label me-2 text-white" for="apiKeyChoiceCustom">
+                            {{ api_key_choice_custom }}
+                        </label>
+                        <input type="text" placeholder="API-KEY" v-model="api_key_custom" aria-label="API-KEY">
+                        <a class="form-check-label fw-bold me-2 alert-link" href="https://platform.openai.com/docs/guides/production-best-practices/api-keys" target="_blank" data-bs-toggle="tooltip" data-bs-placement="bottom" :title="api_key_explanation">&#9432;</a>
+                    </div>
+                </form>
+
+  </div>
+</nav>
+    <div class="container" style="height: 100vh;">
+
+<!--        <nav class="navbar fixed-top navbar-dark bg-success">-->
+<!--            <div class="container-fluid">-->
+<!--                <h1 class="navbar-brand">{{ page_title }}</h1>-->
+<!--                -->
+<!--                <form class="">-->
+<!--                    <div class="form-check">-->
+<!--                        <input class="form-check-input" type="radio" v-model="api_key_choice" name="apiKeyChoice" value="default" id="apiKeyChoiceDefault" checked>-->
+<!--                        <label class="form-check-label text-white" for="apiKeyChoiceDefault">-->
+<!--                            {{ api_key_choice_default }}-->
+<!--                        </label>-->
+<!--                    </div>-->
+<!--                    <div class="form-check">-->
+<!--                        <input class="form-check-input" type="radio" v-model="api_key_choice" name="apiKeyChoice" value="custom" id="apiKeyChoiceCustom">-->
+<!--                        <label class="form-check-label me-2 text-white" for="apiKeyChoiceCustom">-->
+<!--                            {{ api_key_choice_custom }}-->
+<!--                        </label>-->
+<!--                        <input class="me-2" type="text" placeholder="API-KEY" v-model="api_key_custom" aria-label="API-KEY">-->
+<!--                        <a class="form-check-label fw-bold me-2 alert-link" href="https://openai.com/pricing" target="_blank" data-bs-toggle="tooltip" data-bs-placement="bottom" :title="api_key_explanation">&#9432;</a>-->
+<!--                    </div>-->
+<!--                </form>-->
+<!--            </div>-->
+<!--        </nav>-->
+        <div>
+            <div style="height: 100px"></div>
+            <div class="position-fixed d-inline-flex flex-column">
+                <input type="checkbox" class="btn-check" id="videoVisibilityBtn" v-model="is_video_mode" checked autocomplete="off">
+                <label class="btn btn-outline-secondary align-self-start mb-1" for="videoVisibilityBtn">{{ video_mode_button_text }}</label>
+
+                <div v-show="is_video_mode">
+                    <video controls="false" id="robotVideo" class="video-js"></video>
+                </div>
+                    <button class="btn btn-outline-secondary" type="button" id="changeButton" @click="changeImage" :disabled="is_busy">{{ change_image_button_text }}</button>
+            </div>
+        </div>
+        
+        
+        <div class="row" style="min-height: 100%">
+            <div class="col col-4" style="min-height: 100%">
+                <div class="d-inline-flex flex-column justify-content-end" style="width: 100%; min-height: 100%;">
+                    <div style="height: 200px"></div>
+                </div>
+            </div>
+            <div class="col" style="min-height: 100%">
+                <div class="d-flex flex-column justify-content-end" style="width: 100%; min-height: 100%;">
+                    <div v-for="message in messages" class="d-flex mb-3">
+                        <div class="form-check me-3 my-auto">
+                            <input class="form-check-input" type="checkbox" value="" v-if="message.role === 'assistant' || message.role === 'user'" v-model="message.is_checked">
+                        </div>
+                        <div :class="message.role === 'assistant' ? 'me-auto' : message.role === 'user' ? 'ms-auto' : 'mx-auto'">
+                            <div class="card" :class="message.role === 'assistant' ? 'bg-light text-dark me-3' : message.role === 'user' ? 'bg-success text-white ms-3' : 'bg-danger text-white'">
+                                <div class="card-body text-pre" v-html="decorateMessage(message.content)"></div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="d-flex" style="min-height: 200px; background-color: 'green'">
+                        <div class="form-check" v-if="content_messages.length > 0">
+                            <input class="form-check-input" type="checkbox" value="" id="selectAllCheck" @click="selectAll" checked>
+                            <label class="form-check-label" for="selectAllCheck">{{ select_all_check_label }}</label>
+                            <label class="form-check-label fw-bold ms-2" data-bs-toggle="tooltip" data-bs-placement="right" :title="select_content_explanation">&#9432;</label>
+                        </div>
+                        <div class="spinner-border text-secondary mx-auto" role="status" v-if="is_busy">
+                            <span class="visually-hidden">Loading...</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <nav class="navbar fixed-bottom navbar-light bg-dark">
+            <div class="container-fluid">
+                <div class="input-group mb-3 px-3">
+                    <textarea type="text" class="form-control me-2" aria-label="Message" aria-describedby="send-button" style="max-height: 150px;"
+                        :placeholder="message_input_placeholder" 
+                        v-model="message_input"
+                        @keydown.enter.shift.prevent="sendMessages "></textarea>
+                    <button class="btn btn-outline-secondary" type="button" id="sendButton" @click="sendMessages" :disabled="is_busy">{{ send_message_button_text }}</button>
+                </div>
+            </div>
+        </nav>
+
+
+    </div>
+    </div>
+
+    <script src="https://vjs.zencdn.net/8.0.4/video.min.js"></script>
+
+    <script>
+        let player = null;
+        const { createApp } = Vue;
+        const app = createApp({
+            data() {
+                const localized = navigator.language.slice(0, 2) === "mom" ?
+                {
+
+                } :
+                {
+                    page_title: 'Open AI Chatting',
+                    api_key_choice_default: 'Use OPENAI API-KEY On This Site (Limited Traffic)',
+                    api_key_choice_custom: 'Use My OPENAI API-KEY:',
+                    api_key_explanation: `About OPENAI API-KEY:
+Currently, when registering as a developer user on openai.com, you will receive $5 in free credits.
+Developer users can create API-KEYs for free, but using API-KEYs will consume credits.
+After the free credits are used up, you need to provide a valid payment method to continue using API-KEYs.
+It is not recommended to use your own API-KEY on untrusted sites.
+Click for more information.`,
+                    message_input_placeholder: 'Shift + Enter to send',
+                    send_message_button_text: 'Send',
+                    change_image_button_text: 'Change Image',
+                    server_error_message: 'Server error, please try again later.',
+                    error_codes: {
+                        0: 'An unknown error occurred, please try again later.',
+                        1: 'The hourly traffic of the API-KEY on this site has been used up, please try again at the next hour.',
+                        2: 'Your API-KEY is invalid.',
+                        3: 'The API usage is temporarily restricted due to excessive access, please try again later.',
+                        4: 'OPENAI server response timed out, please try again later.',
+                    },
+                    video_mode_button_on: 'Video Mode On',
+                    video_mode_button_off: 'Video Mode Off',
+                    select_all_check_label: 'Select All',
+                    select_content_explanation: `Alll selected historical messages will be sent to ChatGPT on each send.
+ChatGPT replies based on the dialogue history. That's how continuous conversations works.
+The amount of words sent will be converted into API-KEY usage. The more you send, the more you consume.
+Meanwhile, the ChatGPT model also has a limit on the words of each message sent.
+It is recommended to only send the key historical messages. No more than 20 at each time.`,
+                };
+                const unlocalized = {
+                    api_key_choice: 'default',
+                    api_key_custom: '',
+                    message_input: '',
+                    socket: null,
+                    is_busy: false,
+                    is_done_playing: null,
+                    is_video_mode: true,
+                    messages: [],
+                    videoOptions: {
+                        width: 256,
+                        height: 256,
+                        poster: '/api/face_img',
+                        autoplay: false,
+                        controls: false,
+                        sources: []
+                    }
+                };
+                return { ...localized, ...unlocalized};
+            },
+            computed: {
+                video_mode_button_text() {
+                    return this.is_video_mode ? this.video_mode_button_on : this.video_mode_button_off;
+                },
+                content_messages() {
+                    return this.messages.filter(message => message.role === 'assistant' || message.role === 'user');
+                },
+            },
+            methods: {
+                sendMessages() {
+                    if (this.message_input === '') {
+                        return
+                    }
+                    if (this.is_busy) {
+                        return
+                    }
+
+                    const messages = this.content_messages
+                        .filter(message => message.is_checked)
+                        .map(message => { return { content: message.content, role: message.role } });
+                    messages.push({
+                        content: this.message_input,
+                        role: 'user',
+                    });
+                    const data = {
+                        key_type: this.api_key_choice,
+                        messages: messages,
+                        video: this.is_video_mode,
+                    }
+                    if (this.api_key_choice === 'custom') {
+                        data.api_key = this.api_key_custom;
+                    }
+
+                    this.messages.push({
+                        content: this.message_input,
+                        role: 'user',
+                        is_checked: true,
+                    });
+                    this.message_input = '';
+                    this.is_busy = true;
+                    
+                    axios.post('/api/messagev2', data)
+                        .then(response => {
+                            this.is_busy = false;
+                            if (response.data.error_code) {
+                                this.messages.push({
+                                    content: this.error_codes[response.data.error_code],
+                                    role: 'error'
+                                });
+                                return
+                            }
+                            this.messages.push({
+                                content: response.data.message,
+                                role: 'assistant',
+                                is_checked: true,
+                            });
+                            if (response.data.video_url) {
+                                this.playUrl(response.data.video_url);
+                            }
+                        })
+                        .catch(error => {
+                            this.messages.push({
+                                content: this.server_error_message,
+                                role: 'error'
+                            });
+                            this.is_busy = false;
+                            console.log(error);
+                        });
+                },
+                playUrl(url) {
+                    player.src({
+                        src: url,
+                        type: 'video/mp4'
+                    });
+                    this.is_done_playing = false
+                    player.play();
+                },
+                decorateMessage(message) {
+                    var newMessage = '';
+                    message.trim().split("```").forEach((item, index) => {
+                        if (index % 2 === 1) {
+                            newMessage += "<pre class='mb-0 pb-3 px-3 bg-dark text-white'><code>" + item + "</code></pre>";
+                        } else {
+                            newMessage += item.replace(/\n\n/g, "<br>").replace(/\n/g, "<br>");
+                        }
+                    });
+                    return newMessage;
+                },
+                selectAll(event) {
+                    if (event.target.checked) {
+                        this.content_messages.forEach(message => {
+                            message.is_checked = true;
+                        });
+                    } else {
+                        this.content_messages.forEach(message => {
+                            message.is_checked = false;
+                        });
+                    }
+                }
+            },
+            mounted() {
+                player = videojs(document.getElementById('robotVideo'), this.videoOptions, () => {
+                    // console.log('onPlayerReady')
+                });
+                player.removeChild('BigPlayButton');
+                player.getChild('ControlBar').removeChild('fullscreenToggle');
+                player.on('ended', () => {
+                this.is_done_playing = true
+                console.log('done playing')
+                    player.hasStarted(false);
+                });
+            },
+        });
+        app.mount('#app');
+    </script>
+</body>
+</html>
