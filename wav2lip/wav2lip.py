@@ -1,26 +1,33 @@
-import os, subprocess, platform
+import os
+import subprocess
+import platform
 import numpy as np
 import cv2
 import torch
+from azure.cognitiveservices.vision.face import FaceClient
+from msrest.authentication import CognitiveServicesCredentials
 from moviepy.editor import *
 from . import audio
 from .models import Wav2Lip
 
 class FaceVideoMaker(object):
-  # Face alignment to the mouth
-    def __init__(self, weights_file='wav2lip/weights/wav2lip_gan.pth', face_img='assets/face_200.png', coords=(34, 161, 51, 147), y1r=91, audio_dir='temp', video_dir='temp', fps=15, device='cpu'):
+    def __init__(self, weights_file='wav2lip/weights/wav2lip_gan.pth', face_img='assets/face_200.png', audio_dir='temp', video_dir='temp', fps=15, device='cpu', azure_key=None, azure_endpoint=None):
         self.audio_dir = audio_dir
         self.video_dir = video_dir
         self.device = device
         self.fps = fps
         self.frame = cv2.imread(face_img)
-        self.y1, self.y2, self.x1, self.x2 = coords
-        self.y1r = y1r if y1r else self.y1
         self.img_size = 96
         self.mel_step_size = 16
         self.wav2lip_batch_size = 128
-        self.face = self.frame[self.y1:self.y2, self.x1:self.x2]
-        self.face = cv2.resize(self.face, (self.img_size, self.img_size))
+
+        # Initialize Azure Face client
+        if azure_key is None or azure_endpoint is None:
+            raise ValueError("Azure Face API key and endpoint are required")
+        self.face_client = FaceClient(azure_endpoint, CognitiveServicesCredentials(azure_key))
+
+        # Detect face and set coordinates
+        self.detect_face()
 
         weights_path = os.path.join(os.getcwd(), weights_file)
         print('Running...')
@@ -33,6 +40,51 @@ class FaceVideoMaker(object):
         model.load_state_dict(new_s)
         model = model.to(device)
         self.model = model.eval()
+
+    def detect_face(self):
+        # Save the frame as a temporary file
+        temp_image_path = 'temp_face.jpg'
+        cv2.imwrite(temp_image_path, self.frame)
+
+        # Detect face using Azure Face API
+        with open(temp_image_path, 'rb') as image_stream:
+            detected_faces = self.face_client.face.detect_with_stream(
+                image=image_stream,
+                return_face_landmarks=True
+            )
+
+        # Remove temporary file
+        os.remove(temp_image_path)
+
+        if detected_faces:
+            face = detected_faces[0]
+            landmarks = face.face_landmarks
+
+            # Get mouth coordinates
+            mouth_left = landmarks.mouth_left
+            mouth_right = landmarks.mouth_right
+            upper_lip_top = landmarks.upper_lip_top
+            under_lip_bottom = landmarks.under_lip_bottom
+
+            # Set coordinates for the mouth region
+            self.x1 = int(mouth_left.x)
+            self.x2 = int(mouth_right.x)
+            self.y1 = int(upper_lip_top.y)
+            self.y2 = int(under_lip_bottom.y)
+
+            # Add some padding
+            padding = 10
+            self.x1 = max(0, self.x1 - padding)
+            self.y1 = max(0, self.y1 - padding)
+            self.x2 = min(self.frame.shape[1], self.x2 + padding)
+            self.y2 = min(self.frame.shape[0], self.y2 + padding)
+
+            self.y1r = self.y1  # You might want to adjust this based on your specific needs
+        else:
+            raise Exception("No face detected in the image.")
+
+        self.face = self.frame[self.y1:self.y2, self.x1:self.x2]
+        self.face = cv2.resize(self.face, (self.img_size, self.img_size))
 
     def makeVideo(self, id):
         audio_path = os.path.join(os.getcwd(), self.audio_dir, f'{id}.wav')
@@ -71,15 +123,11 @@ class FaceVideoMaker(object):
         face_video_path = os.path.join(os.getcwd(), self.video_dir, f'{id}.mp4')
 
         audioclip = AudioFileClip(audio_path)
-
         videoclip = VideoFileClip(video_path)
 
         new_audioclip = CompositeAudioClip([audioclip])
         videoclip.audio = new_audioclip
         videoclip.write_videofile(face_video_path)
-
-        # command = f'ffmpeg -i {audio_path} -i {video_path} -shortest {face_video_path}'
-        # subprocess.call(command, shell=platform.system() == 'Windows')
 
         os.remove(audio_path)
         os.remove(video_path)
@@ -113,3 +161,7 @@ class FaceVideoMaker(object):
             mel_batch = np.reshape(mel_batch, [len(mel_batch), mel_batch.shape[1], mel_batch.shape[2], 1])
 
             yield img_batch, mel_batch
+
+    def update_face_image(self, new_face_img):
+        self.frame = cv2.imread(new_face_img)
+        self.detect_face()
